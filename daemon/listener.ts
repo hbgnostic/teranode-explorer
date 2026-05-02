@@ -89,6 +89,8 @@ const unwrap = (data: Uint8Array): { publisher: string; inner: any } | null => {
   }
 };
 
+const shortHash = (h: string | undefined) => (h && h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h ?? '?');
+
 pubsub.addEventListener('gossipsub:message', async (evt: any) => {
   const { topic, data } = evt.detail.msg;
   const kindStr = topic.replace(TOPIC_PREFIX, '');
@@ -109,6 +111,31 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
 
   counts[kind]++;
   await publisher.publish(envelope);
+
+  // In dry-run, log each event so you can see the stream. In production we rely
+  // on the 30s heartbeat aggregate to keep journal volume sane.
+  if (DRY_RUN) {
+    const m: any = wrapped.inner;
+    const relay = envelope.relay;
+    const pub = envelope.publisher;
+    switch (kind) {
+      case 'block':
+        console.log(`🟦 BLOCK   h=${m.Height} hash=${shortHash(m.Hash)} miner=${m.ClientName ?? pub} relay=${relay}`);
+        break;
+      case 'subtree':
+        console.log(`🌿 SUBTREE hash=${shortHash(m.Hash)} producer=${m.ClientName ?? pub} relay=${relay}`);
+        break;
+      case 'rejected_tx':
+        console.log(`🚫 REJECTED tx=${shortHash(m.TxID)} reason="${(m.Reason ?? '?').slice(0, 80)}" by=${m.ClientName ?? pub} relay=${relay}`);
+        break;
+      case 'node_status':
+        console.log(
+          `📊 STATUS  ${m.client_name ?? pub} h=${m.best_height} state=${m.fsm_state} ` +
+          `listen=${m.listen_mode} peers=${m.connected_peers_count} v=${m.version} relay=${relay}`,
+        );
+        break;
+    }
+  }
 });
 
 for (const topic of TOPICS) pubsub.subscribe(topic);
