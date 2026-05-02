@@ -1,0 +1,26 @@
+[Unit]
+Description=Teranode mainnet libp2p listener — publishes gossip events to Cloud Pub/Sub
+Documentation=https://github.com/hbgnostic/teranode-explorer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=teranode-explorer
+WorkingDirectory=/opt/teranode-explorer
+EnvironmentFile=/etc/teranode-explorer/env
+ExecStart=/usr/bin/npx tsx daemon/listener.ts
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/teranode-explorer
+
+[Install]
+WantedBy=multi-user.target

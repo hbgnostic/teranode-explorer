@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+title: teranode-explorer
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Doran
+    given-names: Bridget
+    alias: HBGnostic
+    website: "https://x.com/HBGnostic"
+date-released: 2026-05-02
+url: "https://github.com/hbgnostic/teranode-explorer"
+abstract: >-
+  Real-time observability for BSV's Teranode network. A web explorer that
+  taps the Teranode mainnet libp2p / gossipsub mesh directly to surface
+  live blocks, subtrees, operator status, and rejected transactions —
+  no chain-explorer middleman.
+keywords:
+  - bsv
+  - teranode
+  - libp2p
+  - gossipsub
+  - blockchain
+  - explorer
+  - observability
+  - peer-to-peer
+license: MIT
