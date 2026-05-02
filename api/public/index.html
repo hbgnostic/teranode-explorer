@@ -162,6 +162,21 @@ main {
 .entry .body .field { color: var(--text-faint); }
 .entry .body .relay { color: var(--text-faint); margin-left: auto; }
 
+/* derived event types — synthesized from data, not direct gossip */
+.entry.state .badge      { background: rgba(252, 211, 77, 0.15); color: #fcd34d; }
+.entry.new_miner .badge  { background: rgba(244, 114, 182, 0.15); color: #f472b6; }
+.entry.new_miner         { background: rgba(244, 114, 182, 0.04); }
+.entry.tip .badge        { background: rgba(125, 211, 252, 0.15); color: #7dd3fc; }
+.entry.tip               { background: rgba(125, 211, 252, 0.04); }
+.entry.joined .badge     { background: rgba(196, 181, 253, 0.15); color: #c4b5fd; }
+.entry.joined            { background: rgba(196, 181, 253, 0.04); }
+
+/* expandable rejected rows */
+.entry.rejected_tx { cursor: pointer; }
+.entry.rejected_tx:hover { background: rgba(252, 165, 165, 0.06); }
+.entry.expanded { white-space: normal; align-items: flex-start; }
+.entry.expanded .body { white-space: normal; word-break: break-word; overflow: visible; text-overflow: clip; }
+
 /* operator grid */
 .operator-list { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
 .operator {
@@ -286,6 +301,15 @@ footer a:hover { text-decoration: underline; }
   const operators = new Map(); // peer_id -> { ...latestStatus, lastSeen }
   const shortPeerId = (id) => (id && id.length > 20 ? `${id.slice(0,12)}…${id.slice(-6)}` : id ?? '?');
 
+  // derived event tracking — synthesized from incoming node_status messages
+  const operatorPrevState = new Map(); // peer_id -> last fsm_state seen
+  const seenMiners = new Set();        // last_miner values observed in this session
+  const seenOperators = new Set();     // peer_ids observed in this session
+  const tipsByPeer = new Map();        // peer_id (RUNNING only) -> best_height
+  let networkTip = 0;
+  let initialBootstrapDone = false;    // suppress "advance" notice during initial fill
+  const sessionStart = Date.now();
+
   const setStatus = (state, text) => {
     statusEl.classList.remove('connecting', 'connected', 'disconnected');
     statusEl.classList.add(state);
@@ -303,14 +327,66 @@ footer a:hover { text-decoration: underline; }
     return d.toTimeString().slice(0, 8);
   };
 
+  const BADGE_LABELS = { rejected_tx: 'rejected', new_miner: 'miner', joined: 'joined' };
   const addEntry = (type, html, ts) => {
-    counts[type] = (counts[type] ?? 0) + 1;
-    fmtCounts();
+    if (type === 'block' || type === 'subtree' || type === 'rejected_tx') {
+      counts[type] = (counts[type] ?? 0) + 1;
+      fmtCounts();
+    }
     const el = document.createElement('div');
     el.className = `entry ${type}`;
-    el.innerHTML = `<span class="ts">${fmtTime(ts)}</span><span class="badge">${type === 'rejected_tx' ? 'rejected' : type}</span><span class="body">${html}</span>`;
+    el.innerHTML = `<span class="ts">${fmtTime(ts)}</span><span class="badge">${BADGE_LABELS[type] ?? type}</span><span class="body">${html}</span>`;
     feedEl.insertBefore(el, feedEl.firstChild);
     while (feedEl.childElementCount > FEED_MAX) feedEl.removeChild(feedEl.lastChild);
+  };
+
+  // Synthesize derived feed entries from a node_status update.
+  const detectDerivedEvents = (m, peerId, ts) => {
+    const name = m.client_name || '?';
+    const inBootstrapWindow = (Date.now() - sessionStart) < 8000;
+
+    // Operator first seen — suppressed during initial 8s to avoid flooding the feed
+    // with "joined" entries for operators that were already there when we connected.
+    if (peerId && !seenOperators.has(peerId)) {
+      seenOperators.add(peerId);
+      if (!inBootstrapWindow) {
+        addEntry('joined', `<span class="field">new operator:</span> ${escapeHtml(name)} <span class="relay">${escapeHtml(shortPeerId(peerId))}</span>`, ts);
+      }
+    }
+
+    // FSM state change
+    const prev = operatorPrevState.get(peerId);
+    const curr = m.fsm_state;
+    if (prev && prev !== curr) {
+      addEntry('state', `${escapeHtml(name)} <span class="field">${escapeHtml(prev)} → ${escapeHtml(curr)}</span>`, ts);
+    }
+    operatorPrevState.set(peerId, curr);
+
+    // New miner observed (last_miner values not seen before this session). Same
+    // bootstrap-window suppression so we don't emit "new miner" for everything
+    // we see in the first few seconds.
+    if (m.miner_name && !seenMiners.has(m.miner_name)) {
+      seenMiners.add(m.miner_name);
+      if (!inBootstrapWindow) {
+        addEntry('new_miner', `<span class="field">new miner observed:</span> ${escapeHtml(m.miner_name)}`, ts);
+      }
+    }
+
+    // Network tip advance — only count operators in RUNNING state. Need at
+    // least 2 operators agreeing on a height before we call it consensus.
+    if (m.fsm_state === 'RUNNING' && typeof m.best_height === 'number') {
+      tipsByPeer.set(peerId, m.best_height);
+      if (!initialBootstrapDone && tipsByPeer.size >= 3) {
+        initialBootstrapDone = true;
+        networkTip = Math.max(...tipsByPeer.values());
+      } else if (initialBootstrapDone && m.best_height > networkTip) {
+        const agreeing = [...tipsByPeer.values()].filter(h => h >= m.best_height).length;
+        if (agreeing >= 2) {
+          addEntry('tip', `<span class="field">network tip:</span> ${networkTip} → ${m.best_height} <span class="relay">${agreeing} operators agree</span>`, ts);
+          networkTip = m.best_height;
+        }
+      }
+    }
   };
 
   const renderOperators = () => {
@@ -348,7 +424,7 @@ footer a:hover { text-decoration: underline; }
     if (type === 'block') {
       addEntry('block',
         `<span class="field">h=</span>${escapeHtml(m.Height)} ${escapeHtml(shortHash(m.Hash))} ` +
-        `<span class="field">miner=</span>${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
+        `<span class="field">announced by</span> ${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'subtree') {
@@ -357,9 +433,9 @@ footer a:hover { text-decoration: underline; }
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'rejected_tx') {
-      const reason = (m.Reason ?? '?').slice(0, 60);
+      // Render the full reason; CSS truncates by default, click to expand.
       addEntry('rejected_tx',
-        `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(reason)} ` +
+        `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(m.Reason ?? '?')} ` +
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'node_status') {
@@ -369,6 +445,8 @@ footer a:hover { text-decoration: underline; }
       const name = m.client_name || envelope.publisher;
       const key = m.peer_id || `name:${name}`;
       operators.set(key, { ...m, client_name: name, peer_id: m.peer_id, lastSeen: Date.now() });
+      // Synthesize derived events BEFORE re-rendering so they appear in feed.
+      detectDerivedEvents({ ...m, client_name: name }, m.peer_id || `name:${name}`, envelope.receivedAt);
       renderOperators();
       requestAnimationFrame(() => {
         const tile = operatorListEl.querySelector(`.operator[data-peer="${CSS.escape(m.peer_id || '')}"]`);
@@ -379,6 +457,13 @@ footer a:hover { text-decoration: underline; }
       });
     }
   };
+
+  // Click any rejected row to expand/collapse the full reason.
+  feedEl.addEventListener('click', (e) => {
+    const entry = e.target.closest('.entry.rejected_tx');
+    if (!entry) return;
+    entry.classList.toggle('expanded');
+  });
 
   let es;
   const connect = () => {
