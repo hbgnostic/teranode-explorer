@@ -76,14 +76,15 @@ teranode-explorer/
 
 ## Status
 
-In progress — MVP shipping in stages:
+MVP shipped, public launch pending.
 
 - [x] libp2p listener research (precursor: [teranode-listener-test](https://github.com/hbgnostic/teranode-listener-test))
-- [ ] Listener daemon → Pub/Sub on openclaw VM
-- [ ] SSE bridge on Cloud Run
-- [ ] Live block + subtree feed UI
-- [ ] Operator status grid UI
-- [ ] Domain wiring (`explorer.utxoengineer.com`)
+- [x] Listener daemon publishing to Cloud Pub/Sub
+- [x] SSE bridge on Cloud Run
+- [x] Live block and subtree feed UI
+- [x] Operator status grid UI
+- [x] Derived feed events (state changes, new miners, tip advances, operator joins)
+- [x] Domain wiring (`explorer.utxoengineer.com`)
 - [ ] Public launch
 
 ## License
@@ -92,4 +93,4 @@ In progress — MVP shipping in stages:
 
 ## Cite this repo
 
-A `CITATION.cff` is included. GitHub will surface a "Cite this repository" button on the landing page. If you're referencing this work in a piece — a BSV Intel writeup, an article, a research paper — please cite the author.
+A `CITATION.cff` is included. GitHub will surface a "Cite this repository" button on the landing page. If you reference this work in an article or research paper, please cite the author.
