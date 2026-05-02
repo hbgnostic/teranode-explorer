@@ -23,7 +23,11 @@ const TOPICS = [
   'teranode-node-status',
 ] as const;
 
-// Subscriptions are created on first run; reused thereafter.
+// Subscription naming convention. Subs are pre-created (gcloud pubsub
+// subscriptions create) so the runtime SA only needs roles/pubsub.subscriber
+// — which lacks subscriptions.get/create. We attach to subs by name and rely
+// on consume permission; if a sub is missing, the error surfaces at message
+// time and the service stays healthy on the others.
 const SUB_NAME = (topic: string) => `${topic}-sse-bridge`;
 
 const pubsub = new PubSub({ projectId: PROJECT_ID });
@@ -44,29 +48,16 @@ const broadcast = (eventType: string, data: string) => {
   }
 };
 
-const ensureSubscription = async (topic: string) => {
+const startSubscriber = (topic: string) => {
   const subName = SUB_NAME(topic);
   const sub = pubsub.subscription(subName);
-  const [exists] = await sub.exists();
-  if (!exists) {
-    console.log(`creating subscription ${subName}`);
-    await pubsub.topic(topic).createSubscription(subName, {
-      ackDeadlineSeconds: 20,
-      messageRetentionDuration: { seconds: 600 }, // 10 min — short, this is a live feed
-    });
-  }
-  return pubsub.subscription(subName);
-};
-
-const startSubscriber = async (topic: string) => {
-  const sub = await ensureSubscription(topic);
   sub.on('message', (message: Message) => {
     const eventType = message.attributes?.type ?? 'unknown';
     broadcast(eventType, message.data.toString());
     message.ack();
   });
-  sub.on('error', (err: Error) => console.error(`[${topic}] subscription error:`, err.message));
-  console.log(`subscribed to ${topic}`);
+  sub.on('error', (err: Error) => console.error(`[${subName}] subscription error:`, err.message));
+  console.log(`subscribed to ${subName}`);
 };
 
 const app = express();
@@ -103,10 +94,5 @@ app.get('/stream', (req: Request, res: Response) => {
   });
 });
 
-(async () => {
-  for (const topic of TOPICS) await startSubscriber(topic);
-  app.listen(PORT, () => console.log(`SSE bridge listening on :${PORT}`));
-})().catch((err) => {
-  console.error('fatal startup error:', err);
-  process.exit(1);
-});
+for (const topic of TOPICS) startSubscriber(topic);
+app.listen(PORT, () => console.log(`SSE bridge listening on :${PORT}`));
