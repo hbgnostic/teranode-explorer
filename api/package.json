@@ -1,0 +1,26 @@
+{
+  "name": "teranode-explorer-api",
+  "version": "0.0.1",
+  "description": "Cloud Run SSE bridge — fans Pub/Sub events to browser clients",
+  "license": "MIT",
+  "author": "Bridget Doran <bridget@doranconsultingllc.com> (https://x.com/HBGnostic)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx index.ts",
+    "dev": "tsx index.ts"
+  },
+  "dependencies": {
+    "@google-cloud/pubsub": "^4.10.0",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3"
+  }
+}
