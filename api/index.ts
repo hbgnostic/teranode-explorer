@@ -7,6 +7,8 @@
 
 import express, { Request, Response } from 'express';
 import { PubSub, Message } from '@google-cloud/pubsub';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
@@ -61,6 +63,9 @@ const startSubscriber = (topic: string) => {
 };
 
 const app = express();
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+app.use(express.static(resolve(__dirname, 'public')));
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true, clients: clients.length, topics: TOPICS });

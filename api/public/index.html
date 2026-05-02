@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teranode Explorer — Live BSV Gossip Mesh</title>
+<meta name="description" content="Real-time observability for BSV's Teranode network: live blocks, subtrees, operator status, rejected transactions.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0a0e1a;
+  --bg-elev: #131829;
+  --bg-elev-2: #1a2138;
+  --border: #262e47;
+  --text: #d8def0;
+  --text-dim: #8a93b0;
+  --text-faint: #545d7a;
+  --accent: #5eead4;
+  --block: #5eead4;
+  --subtree: #86efac;
+  --rejected: #fca5a5;
+  --status-running: #4ade80;
+  --status-catching: #fbbf24;
+  --status-legacy: #fb923c;
+  --status-idle: #94a3b8;
+  --link: #93c5fd;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 16px;
+}
+header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+header h1 .accent { color: var(--accent); }
+header .tagline { color: var(--text-dim); font-size: 12px; }
+header .byline {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+}
+header .byline a { color: var(--link); text-decoration: none; }
+header .byline a:hover { text-decoration: underline; }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--status-idle);
+  transition: background 0.3s;
+}
+.status-bar.connected .status-dot { background: var(--status-running); box-shadow: 0 0 8px var(--status-running); }
+.status-bar.disconnected .status-dot { background: var(--rejected); }
+.status-bar.connecting .status-dot { background: var(--status-catching); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+  gap: 14px;
+  padding: 14px;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.panel-header .title { color: var(--text); font-weight: 600; }
+.panel-header .counts { margin-left: auto; font-family: var(--mono); font-size: 10px; }
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.panel-body::-webkit-scrollbar { width: 8px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* feed entries */
+.entry {
+  padding: 5px 14px;
+  border-bottom: 1px solid rgba(38, 46, 71, 0.4);
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entry .ts { color: var(--text-faint); font-size: 10px; flex-shrink: 0; }
+.entry .badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.entry.block .badge { background: rgba(94, 234, 212, 0.15); color: var(--block); }
+.entry.subtree .badge { background: rgba(134, 239, 172, 0.1); color: var(--subtree); }
+.entry.rejected_tx .badge { background: rgba(252, 165, 165, 0.12); color: var(--rejected); }
+.entry .body { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.entry.block { background: rgba(94, 234, 212, 0.04); }
+.entry.block .body { font-weight: 500; color: var(--text); }
+.entry.rejected_tx .body { color: var(--text-dim); }
+.entry .body .field { color: var(--text-faint); }
+.entry .body .relay { color: var(--text-faint); margin-left: auto; }
+
+/* operator grid */
+.operator-list { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
+.operator {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 11px;
+  font-family: var(--mono);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  transition: border-color 0.4s ease-out;
+}
+.operator.flash { border-color: var(--accent); }
+.operator .name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--sans);
+}
+.operator .state-badge {
+  align-self: start;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.operator[data-state="RUNNING"] .state-badge { background: rgba(74, 222, 128, 0.15); color: var(--status-running); }
+.operator[data-state="CATCHINGBLOCKS"] .state-badge { background: rgba(251, 191, 36, 0.15); color: var(--status-catching); }
+.operator[data-state="LEGACYSYNCING"] .state-badge { background: rgba(251, 146, 60, 0.15); color: var(--status-legacy); }
+.operator[data-state="IDLE"] .state-badge { background: rgba(148, 163, 184, 0.15); color: var(--status-idle); }
+.operator .meta {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-size: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.operator .meta .field-name { color: var(--text-faint); }
+.operator.stale { opacity: 0.4; }
+
+footer {
+  padding: 8px 22px;
+  font-size: 11px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-family: var(--mono);
+}
+footer a { color: var(--link); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Teranode <span class="accent">Explorer</span></h1>
+  <div class="tagline">Live view of BSV's Teranode gossip mesh — blocks, subtrees, operators, rejections</div>
+  <div class="status-bar connecting" id="status">
+    <span class="status-dot"></span>
+    <span id="status-text">connecting…</span>
+  </div>
+  <div class="byline">
+    Built by <a href="https://x.com/HBGnostic" target="_blank" rel="noopener">HBGnostic</a>
+    — <a href="https://utxoengineer.com" target="_blank" rel="noopener">UTXO Engineer</a>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-header">
+      <span class="title">Live Feed</span>
+      <span class="counts" id="feed-counts">block 0 • subtree 0 • rejected 0</span>
+    </div>
+    <div class="panel-body" id="feed"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <span class="title">Operators</span>
+      <span class="counts" id="operator-counts">0 announcing</span>
+    </div>
+    <div class="panel-body">
+      <div class="operator-list" id="operator-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a href="https://github.com/hbgnostic/teranode-explorer" target="_blank" rel="noopener">github.com/hbgnostic/teranode-explorer</a>
+  &nbsp;•&nbsp; MIT licensed, attribution requested &nbsp;•&nbsp; not affiliated with the BSV Association
+</footer>
+
+<script>
+(() => {
+  const SSE_URL = '/stream';
+  const FEED_MAX = 250;
+  const STALE_MS = 60_000; // operator considered stale if no heartbeat in 60s
+
+  const feedEl = document.getElementById('feed');
+  const feedCountsEl = document.getElementById('feed-counts');
+  const operatorListEl = document.getElementById('operator-list');
+  const operatorCountsEl = document.getElementById('operator-counts');
+  const statusEl = document.getElementById('status');
+  const statusTextEl = document.getElementById('status-text');
+
+  const counts = { block: 0, subtree: 0, rejected_tx: 0 };
+  const operators = new Map(); // client_name -> { ...latestStatus, lastSeen }
+
+  const setStatus = (state, text) => {
+    statusEl.classList.remove('connecting', 'connected', 'disconnected');
+    statusEl.classList.add(state);
+    statusTextEl.textContent = text;
+  };
+
+  const fmtCounts = () => {
+    feedCountsEl.textContent = `block ${counts.block} • subtree ${counts.subtree} • rejected ${counts.rejected_tx}`;
+  };
+
+  const shortHash = (h) => (h && h.length > 16 ? `${h.slice(0,8)}…${h.slice(-6)}` : h ?? '?');
+  const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmtTime = (iso) => {
+    const d = new Date(iso);
+    return d.toTimeString().slice(0, 8);
+  };
+
+  const addEntry = (type, html, ts) => {
+    counts[type] = (counts[type] ?? 0) + 1;
+    fmtCounts();
+    const el = document.createElement('div');
+    el.className = `entry ${type}`;
+    el.innerHTML = `<span class="ts">${fmtTime(ts)}</span><span class="badge">${type === 'rejected_tx' ? 'rejected' : type}</span><span class="body">${html}</span>`;
+    feedEl.insertBefore(el, feedEl.firstChild);
+    while (feedEl.childElementCount > FEED_MAX) feedEl.removeChild(feedEl.lastChild);
+  };
+
+  const renderOperators = () => {
+    const sorted = [...operators.values()].sort((a, b) => a.client_name.localeCompare(b.client_name));
+    operatorCountsEl.textContent = `${operators.size} announcing`;
+    operatorListEl.innerHTML = sorted.map((op) => {
+      const stale = (Date.now() - op.lastSeen) > STALE_MS;
+      const state = op.fsm_state || 'IDLE';
+      return `
+        <div class="operator${stale ? ' stale' : ''}" data-state="${escapeHtml(state)}" data-name="${escapeHtml(op.client_name)}">
+          <span class="name">${escapeHtml(op.client_name)}</span>
+          <span class="state-badge">${escapeHtml(state)}</span>
+          <div class="meta">
+            <span><span class="field-name">h=</span>${escapeHtml(op.best_height ?? '?')}</span>
+            <span><span class="field-name">v=</span>${escapeHtml(op.version ?? '?')}</span>
+            <span><span class="field-name">listen=</span>${escapeHtml(op.listen_mode ?? '?')}</span>
+            <span><span class="field-name">storage=</span>${escapeHtml(op.storage ?? '?')}</span>
+            <span><span class="field-name">peers=</span>${escapeHtml(op.connected_peers_count ?? '?')}</span>
+            <span><span class="field-name">last_miner=</span>${escapeHtml(op.miner_name || '?')}</span>
+          </div>
+        </div>`;
+    }).join('');
+  };
+
+  setInterval(renderOperators, 5000); // refresh stale state visualization
+
+  const handleEvent = (type, envelope) => {
+    const m = envelope.data || {};
+    const relay = envelope.relay;
+    if (type === 'block') {
+      addEntry('block',
+        `<span class="field">h=</span>${escapeHtml(m.Height)} ${escapeHtml(shortHash(m.Hash))} ` +
+        `<span class="field">miner=</span>${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
+        `<span class="relay">via ${escapeHtml(relay)}</span>`,
+        envelope.receivedAt);
+    } else if (type === 'subtree') {
+      addEntry('subtree',
+        `${escapeHtml(shortHash(m.Hash))} <span class="field">producer=</span>${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
+        `<span class="relay">via ${escapeHtml(relay)}</span>`,
+        envelope.receivedAt);
+    } else if (type === 'rejected_tx') {
+      const reason = (m.Reason ?? '?').slice(0, 60);
+      addEntry('rejected_tx',
+        `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(reason)} ` +
+        `<span class="relay">via ${escapeHtml(relay)}</span>`,
+        envelope.receivedAt);
+    } else if (type === 'node_status') {
+      const name = m.client_name || envelope.publisher;
+      operators.set(name, { ...m, client_name: name, lastSeen: Date.now() });
+      renderOperators();
+      // Flash the tile briefly to show it just updated.
+      requestAnimationFrame(() => {
+        const tile = operatorListEl.querySelector(`.operator[data-name="${CSS.escape(name)}"]`);
+        if (tile) {
+          tile.classList.add('flash');
+          setTimeout(() => tile.classList.remove('flash'), 600);
+        }
+      });
+    }
+  };
+
+  let es;
+  const connect = () => {
+    setStatus('connecting', 'connecting…');
+    es = new EventSource(SSE_URL);
+    es.addEventListener('hello', () => setStatus('connected', 'connected'));
+    es.addEventListener('block', (e) => handleEvent('block', JSON.parse(e.data)));
+    es.addEventListener('subtree', (e) => handleEvent('subtree', JSON.parse(e.data)));
+    es.addEventListener('rejected_tx', (e) => handleEvent('rejected_tx', JSON.parse(e.data)));
+    es.addEventListener('node_status', (e) => handleEvent('node_status', JSON.parse(e.data)));
+    es.onerror = () => {
+      setStatus('disconnected', 'disconnected — reconnecting…');
+      // EventSource auto-reconnects; we just update the UI.
+    };
+    es.onopen = () => setStatus('connected', 'connected');
+  };
+  connect();
+})();
+</script>
+
+</body>
+</html>
