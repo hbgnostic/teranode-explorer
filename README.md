@@ -5,7 +5,7 @@ Real-time observability for BSV's Teranode network — a live view of the libp2p
 By **[Bridget Doran](https://x.com/HBGnostic)** ([HBGnostic](https://x.com/HBGnostic) on X / [UTXO Engineer](https://utxoengineer.com)) — author of the BSV Intel Report.
 First published **May 2026**.
 
-Live at [`teranode.utxoengineer.com`](https://teranode.utxoengineer.com).
+Live at [`explorer.utxoengineer.com`](https://explorer.utxoengineer.com).
 
 ---
 
@@ -83,7 +83,7 @@ In progress — MVP shipping in stages:
 - [ ] SSE bridge on Cloud Run
 - [ ] Live block + subtree feed UI
 - [ ] Operator status grid UI
-- [ ] Domain wiring (`teranode.utxoengineer.com`)
+- [ ] Domain wiring (`explorer.utxoengineer.com`)
 - [ ] Public launch
 
 ## License
