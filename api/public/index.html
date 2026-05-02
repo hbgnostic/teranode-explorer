@@ -182,6 +182,16 @@ main {
   font-weight: 600;
   color: var(--text);
   font-family: var(--sans);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.operator .name .peer-suffix {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-faint);
+  letter-spacing: 0;
 }
 .operator .state-badge {
   align-self: start;
@@ -273,7 +283,8 @@ footer a:hover { text-decoration: underline; }
   const statusTextEl = document.getElementById('status-text');
 
   const counts = { block: 0, subtree: 0, rejected_tx: 0 };
-  const operators = new Map(); // client_name -> { ...latestStatus, lastSeen }
+  const operators = new Map(); // peer_id -> { ...latestStatus, lastSeen }
+  const shortPeerId = (id) => (id && id.length > 20 ? `${id.slice(0,12)}…${id.slice(-6)}` : id ?? '?');
 
   const setStatus = (state, text) => {
     statusEl.classList.remove('connecting', 'connected', 'disconnected');
@@ -303,14 +314,19 @@ footer a:hover { text-decoration: underline; }
   };
 
   const renderOperators = () => {
-    const sorted = [...operators.values()].sort((a, b) => a.client_name.localeCompare(b.client_name));
+    const sorted = [...operators.values()].sort((a, b) =>
+      a.client_name.localeCompare(b.client_name) || (a.peer_id || '').localeCompare(b.peer_id || '')
+    );
     operatorCountsEl.textContent = `${operators.size} announcing`;
     operatorListEl.innerHTML = sorted.map((op) => {
       const stale = (Date.now() - op.lastSeen) > STALE_MS;
       const state = op.fsm_state || 'IDLE';
       return `
-        <div class="operator${stale ? ' stale' : ''}" data-state="${escapeHtml(state)}" data-name="${escapeHtml(op.client_name)}">
-          <span class="name">${escapeHtml(op.client_name)}</span>
+        <div class="operator${stale ? ' stale' : ''}" data-state="${escapeHtml(state)}" data-peer="${escapeHtml(op.peer_id || '')}">
+          <span class="name">
+            ${escapeHtml(op.client_name)}
+            <span class="peer-suffix">${escapeHtml(shortPeerId(op.peer_id))}</span>
+          </span>
           <span class="state-badge">${escapeHtml(state)}</span>
           <div class="meta">
             <span><span class="field-name">h=</span>${escapeHtml(op.best_height ?? '?')}</span>
@@ -347,12 +363,15 @@ footer a:hover { text-decoration: underline; }
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'node_status') {
+      // Key on peer_id — multiple operators can share client_name (e.g. the
+      // default "teranode" used by unconfigured nodes). peer_id is the
+      // libp2p cryptographic identity and is always unique.
       const name = m.client_name || envelope.publisher;
-      operators.set(name, { ...m, client_name: name, lastSeen: Date.now() });
+      const key = m.peer_id || `name:${name}`;
+      operators.set(key, { ...m, client_name: name, peer_id: m.peer_id, lastSeen: Date.now() });
       renderOperators();
-      // Flash the tile briefly to show it just updated.
       requestAnimationFrame(() => {
-        const tile = operatorListEl.querySelector(`.operator[data-name="${CSS.escape(name)}"]`);
+        const tile = operatorListEl.querySelector(`.operator[data-peer="${CSS.escape(m.peer_id || '')}"]`);
         if (tile) {
           tile.classList.add('flash');
           setTimeout(() => tile.classList.remove('flash'), 600);
