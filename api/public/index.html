@@ -164,8 +164,6 @@ main {
 
 /* derived event types — synthesized from data, not direct gossip */
 .entry.state .badge      { background: rgba(252, 211, 77, 0.15); color: #fcd34d; }
-.entry.new_miner .badge  { background: rgba(244, 114, 182, 0.15); color: #f472b6; }
-.entry.new_miner         { background: rgba(244, 114, 182, 0.04); }
 .entry.tip .badge        { background: rgba(125, 211, 252, 0.15); color: #7dd3fc; }
 .entry.tip               { background: rgba(125, 211, 252, 0.04); }
 .entry.joined .badge     { background: rgba(196, 181, 253, 0.15); color: #c4b5fd; }
@@ -305,7 +303,6 @@ footer a:hover { text-decoration: underline; }
 
   // derived event tracking — synthesized from incoming node_status messages
   const operatorPrevState = new Map(); // peer_id -> last fsm_state seen
-  const seenMiners = new Set();        // last_miner values observed in this session
   const seenOperators = new Set();     // peer_ids observed in this session
   const tipsByPeer = new Map();        // peer_id (RUNNING only) -> best_height
   let networkTip = 0;
@@ -329,7 +326,7 @@ footer a:hover { text-decoration: underline; }
     return d.toTimeString().slice(0, 8);
   };
 
-  const BADGE_LABELS = { rejected_tx: 'rejected', new_miner: 'miner', joined: 'joined' };
+  const BADGE_LABELS = { rejected_tx: 'rejected', joined: 'joined' };
   const addEntry = (type, html, ts) => {
     if (type === 'block' || type === 'subtree' || type === 'rejected_tx') {
       counts[type] = (counts[type] ?? 0) + 1;
@@ -363,17 +360,6 @@ footer a:hover { text-decoration: underline; }
       addEntry('state', `${escapeHtml(name)} <span class="field">${escapeHtml(prev)} → ${escapeHtml(curr)}</span>`, ts);
     }
     operatorPrevState.set(peerId, curr);
-
-    // New miner observed (last_miner values not seen before this session).
-    // Only emit from RUNNING operators — last_miner on a syncing/bootstrapping
-    // node is whatever historical block it most recently processed, not a
-    // current network event. Bootstrap window suppression also applies.
-    if (m.miner_name && m.fsm_state === 'RUNNING' && !seenMiners.has(m.miner_name)) {
-      seenMiners.add(m.miner_name);
-      if (!inBootstrapWindow) {
-        addEntry('new_miner', `<span class="field">new miner observed:</span> ${escapeHtml(m.miner_name)}`, ts);
-      }
-    }
 
     // Network tip advance — only count operators in RUNNING state. Need at
     // least 2 operators agreeing on a height before we call it consensus.
