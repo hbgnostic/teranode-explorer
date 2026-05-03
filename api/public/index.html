@@ -342,10 +342,13 @@ footer a:hover { text-decoration: underline; }
   // Synthesize derived feed entries from a node_status update.
   const detectDerivedEvents = (m, peerId, ts) => {
     const name = m.client_name || '?';
-    const inBootstrapWindow = (Date.now() - sessionStart) < 8000;
+    // 60s window covers ~6 heartbeat cycles (~10s each), so every currently
+    // online operator publishes at least once before we start emitting events.
+    const inBootstrapWindow = (Date.now() - sessionStart) < 60000;
 
-    // Operator first seen — suppressed during initial 8s to avoid flooding the feed
-    // with "joined" entries for operators that were already there when we connected.
+    // Operator first seen — suppressed during the bootstrap window to avoid
+    // flooding the feed with "joined" entries for operators that were already
+    // there when we connected; their first heartbeat just hadn't arrived yet.
     if (peerId && !seenOperators.has(peerId)) {
       seenOperators.add(peerId);
       if (!inBootstrapWindow) {
