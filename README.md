@@ -85,7 +85,7 @@ MVP shipped, public launch pending.
 - [x] Operator status grid UI
 - [x] Derived feed events (state changes, new miners, tip advances, operator joins)
 - [x] Domain wiring (`explorer.utxoengineer.com`)
-- [ ] Public launch
+- [x] Public launch
 
 ## License
 
