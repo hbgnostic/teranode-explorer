@@ -27,6 +27,7 @@ const PEER_LABELS: Record<string, string> = {
 const labelOf = (peerId: string) => PEER_LABELS[peerId] ?? peerId.slice(-12);
 
 const DRY_RUN = process.env.DRY_RUN === '1';
+const REJECTION_LOG = process.env.REJECTION_LOG === '1';
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -111,6 +112,20 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
 
   counts[kind]++;
   await publisher.publish(envelope);
+
+  // Per-rejection structured log. Independent of DRY_RUN; opt-in via
+  // REJECTION_LOG=1 so journal volume only grows when we want a sample
+  // for offline reason-distribution analysis.
+  if (REJECTION_LOG && kind === 'rejected_tx') {
+    const m: any = wrapped.inner;
+    console.log(`[reject] ${JSON.stringify({
+      ts: envelope.receivedAt,
+      txid: m.TxID,
+      reason: m.Reason,
+      publisher: envelope.publisher,
+      relay: envelope.relay,
+    })}`);
+  }
 
   // In dry-run, log each event so you can see the stream. In production we rely
   // on the 30s heartbeat aggregate to keep journal volume sane.
