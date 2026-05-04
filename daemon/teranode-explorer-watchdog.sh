@@ -18,7 +18,7 @@ set -uo pipefail
 NTFY_TOPIC="${NTFY_TOPIC:-MISSING_TOPIC}"
 NTFY_URL="https://ntfy.sh/${NTFY_TOPIC}"
 SERVICE=teranode-explorer-listener.service
-COOLDOWN_SEC=$((30 * 60))
+COOLDOWN_SEC=$((10 * 60))
 STATE_DIR=/var/lib/teranode-explorer-watchdog
 LOCK_FILE="${STATE_DIR}/lastrestart"
 mkdir -p "$STATE_DIR"
