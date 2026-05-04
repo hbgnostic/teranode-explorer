@@ -127,6 +127,60 @@ main {
   font-style: italic;
   line-height: 1.35;
 }
+
+/* tap-friendly legend: collapsible <details> with a list of badges + definitions.
+   Replaces the desktop-only hover tooltips for mobile/touch users. */
+.legend {
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.legend summary {
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--link);
+  list-style: none;
+  user-select: none;
+}
+.legend summary::-webkit-details-marker { display: none; }
+.legend summary::before { content: '▸ '; color: var(--text-faint); }
+.legend[open] summary::before { content: '▾ '; }
+.legend summary:hover { color: var(--text); }
+.legend-items {
+  padding: 0 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legend-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.legend-badge {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+  min-width: 50px;
+  text-align: center;
+}
+.legend-badge.block { background: rgba(94, 234, 212, 0.15); color: var(--block); }
+.legend-badge.subtree { background: rgba(134, 239, 172, 0.1); color: var(--subtree); }
+.legend-badge.rejected { background: rgba(252, 165, 165, 0.12); color: var(--rejected); }
+.legend-badge.joined { background: rgba(196, 181, 253, 0.15); color: #c4b5fd; }
+.legend-badge.state { background: rgba(252, 211, 77, 0.15); color: #fcd34d; }
+.legend-badge.tip { background: rgba(125, 211, 252, 0.15); color: #7dd3fc; }
+.legend-badge.RUNNING { background: rgba(74, 222, 128, 0.15); color: var(--status-running); }
+.legend-badge.CATCHINGBLOCKS { background: rgba(251, 191, 36, 0.15); color: var(--status-catching); }
+.legend-badge.LEGACYSYNCING { background: rgba(251, 146, 60, 0.15); color: var(--status-legacy); }
+.legend-badge.IDLE { background: rgba(148, 163, 184, 0.15); color: var(--status-idle); }
 .panel-body {
   flex: 1;
   min-height: 0;
@@ -284,7 +338,18 @@ footer a:hover { text-decoration: underline; }
       <span class="title">Live Feed</span>
       <span class="counts" id="feed-counts">block 0 • subtree 0 • rejected 0</span>
     </div>
-    <div class="panel-subtitle">Live events from the gossip mesh: blocks, subtrees, operator state changes, rejections. Hover any badge for a definition.</div>
+    <div class="panel-subtitle">Live events from the gossip mesh: blocks, subtrees, operator state changes, rejections.</div>
+    <details class="legend">
+      <summary>What do these mean?</summary>
+      <div class="legend-items">
+        <div class="legend-item"><span class="legend-badge block">block</span><span><strong>Direct gossip event.</strong> A new block was broadcast on the mesh.</span></div>
+        <div class="legend-item"><span class="legend-badge subtree">subtree</span><span><strong>Direct gossip event.</strong> A pre-block transaction batch (subtree) was broadcast by an operator.</span></div>
+        <div class="legend-item"><span class="legend-badge rejected">rejected</span><span><strong>Direct gossip event.</strong> An operator rejected a transaction. Tap the row to expand the full reason.</span></div>
+        <div class="legend-item"><span class="legend-badge joined">joined</span><span><em>Synthesized from operator heartbeats.</em> A new operator came online during this session.</span></div>
+        <div class="legend-item"><span class="legend-badge state">state</span><span><em>Synthesized from operator heartbeats.</em> An operator changed FSM state (e.g. CATCHINGBLOCKS to RUNNING).</span></div>
+        <div class="legend-item"><span class="legend-badge tip">tip</span><span><em>Synthesized from operator heartbeats.</em> The chain tip advanced; multiple operators agreed on a new height.</span></div>
+      </div>
+    </details>
     <div class="panel-body" id="feed"></div>
   </section>
 
@@ -294,6 +359,15 @@ footer a:hover { text-decoration: underline; }
       <span class="counts" id="operator-counts">0 announcing</span>
     </div>
     <div class="panel-subtitle">Teranodes broadcasting status heartbeats to the gossip mesh. Private or silent operators stay invisible.</div>
+    <details class="legend">
+      <summary>What do these states mean?</summary>
+      <div class="legend-items">
+        <div class="legend-item"><span class="legend-badge RUNNING">RUNNING</span><span>Synced and operating normally. Receiving and validating gossip in real time.</span></div>
+        <div class="legend-item"><span class="legend-badge CATCHINGBLOCKS">CATCHINGBLOCKS</span><span>Syncing recent blocks. Close to the chain tip but not fully caught up.</span></div>
+        <div class="legend-item"><span class="legend-badge LEGACYSYNCING">LEGACYSYNCING</span><span>Initial sync from legacy SVNode peers. Used during early catch-up.</span></div>
+        <div class="legend-item"><span class="legend-badge IDLE">IDLE</span><span>Not actively syncing. Often a startup, shutdown, or paused state.</span></div>
+      </div>
+    </details>
     <div class="panel-body">
       <div class="operator-list" id="operator-list"></div>
     </div>
