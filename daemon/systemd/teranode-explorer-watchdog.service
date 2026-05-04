@@ -1,0 +1,9 @@
+[Unit]
+Description=Teranode explorer listener watchdog (detect silent gossip-flow death and auto-restart)
+After=network-online.target teranode-explorer-listener.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/bhs-watchdog/env
+ExecStart=/usr/local/bin/teranode-explorer-watchdog.sh
