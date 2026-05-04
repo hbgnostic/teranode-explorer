@@ -282,6 +282,7 @@ footer a:hover { text-decoration: underline; }
       <span class="title">Live Feed</span>
       <span class="counts" id="feed-counts">block 0 • subtree 0 • rejected 0</span>
     </div>
+    <div class="panel-subtitle">Live events from the gossip mesh: blocks, subtrees, operator state changes, rejections. Hover any badge for a definition.</div>
     <div class="panel-body" id="feed"></div>
   </section>
 
@@ -483,7 +484,11 @@ footer a:hover { text-decoration: underline; }
           body.insertBefore(countEl, relayEl);
         }
         countEl.textContent = `×${existing.count}`;
-        feedEl.insertBefore(existing.el, feedEl.firstChild);
+        // Don't move an expanded row to the top — keeps it readable while
+        // the user is looking at it, even on a fast-moving feed.
+        if (!existing.el.classList.contains('expanded')) {
+          feedEl.insertBefore(existing.el, feedEl.firstChild);
+        }
       } else {
         const el = addEntry('rejected_tx',
           `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(m.Reason ?? '?')} ` +
