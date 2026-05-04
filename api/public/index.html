@@ -170,12 +170,14 @@ main {
 .entry .body .field { color: var(--text-faint); }
 .entry .body .relay { color: var(--text-faint); margin-left: auto; }
 
-/* derived event types — synthesized from data, not direct gossip */
+/* derived event types — synthesized from operator heartbeats, not direct gossip */
 .entry.state .badge      { background: rgba(252, 211, 77, 0.15); color: #fcd34d; }
 .entry.tip .badge        { background: rgba(125, 211, 252, 0.15); color: #7dd3fc; }
 .entry.tip               { background: rgba(125, 211, 252, 0.04); }
 .entry.joined .badge     { background: rgba(196, 181, 253, 0.15); color: #c4b5fd; }
 .entry.joined            { background: rgba(196, 181, 253, 0.04); }
+/* italic body marks rows we synthesized in-browser rather than received as gossip */
+.entry.state .body, .entry.tip .body, .entry.joined .body { font-style: italic; }
 
 /* expandable rejected rows */
 .entry.rejected_tx { cursor: pointer; }
@@ -348,12 +350,12 @@ footer a:hover { text-decoration: underline; }
 
   const BADGE_LABELS = { rejected_tx: 'rejected', joined: 'joined' };
   const BADGE_TOOLTIPS = {
-    block: 'A new block was broadcast on the gossip mesh.',
-    subtree: 'A pre-block transaction batch (subtree) was broadcast by an operator.',
-    rejected_tx: 'An operator rejected a transaction. Click the row to expand the full reason.',
-    joined: 'A new operator came online during this session.',
-    state: 'An operator changed FSM state (e.g. CATCHINGBLOCKS to RUNNING).',
-    tip: 'The network chain tip advanced; multiple operators agreed on a new height.',
+    block: 'Direct gossip event: a new block was broadcast on the mesh.',
+    subtree: 'Direct gossip event: a pre-block transaction batch (subtree) was broadcast by an operator.',
+    rejected_tx: 'Direct gossip event: an operator rejected a transaction. Click to expand the full reason.',
+    joined: 'Synthesized from operator heartbeats: a new operator came online during this session.',
+    state: 'Synthesized from operator heartbeats: an operator changed FSM state (e.g. CATCHINGBLOCKS to RUNNING).',
+    tip: 'Synthesized from operator heartbeats: the chain tip advanced; multiple operators agreed on a new height.',
   };
   const STATE_DESCRIPTIONS = {
     RUNNING: 'Synced and operating normally. Receiving and validating gossip in real time.',
