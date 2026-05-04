@@ -176,6 +176,15 @@ main {
 .entry.rejected_tx.expanded .body::before { content: '▾ '; color: var(--text-dim); }
 .entry.expanded { white-space: normal; align-items: flex-start; }
 .entry.expanded .body { white-space: normal; word-break: break-word; overflow: visible; text-overflow: clip; }
+.entry .count {
+  color: var(--rejected);
+  font-weight: 600;
+  font-size: 11px;
+  margin: 0 6px;
+  padding: 1px 5px;
+  background: rgba(252, 165, 165, 0.15);
+  border-radius: 3px;
+}
 
 /* operator grid */
 .operator-list { padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -304,6 +313,7 @@ footer a:hover { text-decoration: underline; }
   // derived event tracking — synthesized from incoming node_status messages
   const operatorPrevState = new Map(); // peer_id -> last fsm_state seen
   const seenOperators = new Set();     // peer_ids observed in this session
+  const rejectionRows = new Map();     // txid -> { el, count } for dedup
   const tipsByPeer = new Map();        // peer_id (RUNNING only) -> best_height
   let networkTip = 0;
   let initialBootstrapDone = false;    // suppress "advance" notice during initial fill
@@ -336,7 +346,13 @@ footer a:hover { text-decoration: underline; }
     el.className = `entry ${type}`;
     el.innerHTML = `<span class="ts">${fmtTime(ts)}</span><span class="badge">${BADGE_LABELS[type] ?? type}</span><span class="body">${html}</span>`;
     feedEl.insertBefore(el, feedEl.firstChild);
-    while (feedEl.childElementCount > FEED_MAX) feedEl.removeChild(feedEl.lastChild);
+    while (feedEl.childElementCount > FEED_MAX) {
+      const last = feedEl.lastChild;
+      const evictedTxid = last.dataset?.txid;
+      if (evictedTxid) rejectionRows.delete(evictedTxid);
+      feedEl.removeChild(last);
+    }
+    return el;
   };
 
   // Synthesize derived feed entries from a node_status update.
@@ -425,11 +441,35 @@ footer a:hover { text-decoration: underline; }
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'rejected_tx') {
-      // Render the full reason; CSS truncates by default, click to expand.
-      addEntry('rejected_tx',
-        `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(m.Reason ?? '?')} ` +
-        `<span class="relay">via ${escapeHtml(relay)}</span>`,
-        envelope.receivedAt);
+      // Dedup by txid: same tx rebroadcast → bump counter on existing row,
+      // refresh timestamp, move to top. New txid → create row, register it.
+      // Reflects the analysis showing ~111x echo factor on rejections.
+      const txid = m.TxID || '';
+      const existing = txid ? rejectionRows.get(txid) : null;
+      if (existing && feedEl.contains(existing.el)) {
+        existing.count++;
+        const tsEl = existing.el.querySelector('.ts');
+        if (tsEl) tsEl.textContent = fmtTime(envelope.receivedAt);
+        const body = existing.el.querySelector('.body');
+        let countEl = body.querySelector('.count');
+        if (!countEl) {
+          countEl = document.createElement('span');
+          countEl.className = 'count';
+          const relayEl = body.querySelector('.relay');
+          body.insertBefore(countEl, relayEl);
+        }
+        countEl.textContent = `×${existing.count}`;
+        feedEl.insertBefore(existing.el, feedEl.firstChild);
+      } else {
+        const el = addEntry('rejected_tx',
+          `${escapeHtml(shortHash(m.TxID))} ${escapeHtml(m.Reason ?? '?')} ` +
+          `<span class="relay">via ${escapeHtml(relay)}</span>`,
+          envelope.receivedAt);
+        if (txid) {
+          el.dataset.txid = txid;
+          rejectionRows.set(txid, { el, count: 1 });
+        }
+      }
     } else if (type === 'node_status') {
       // Key on peer_id — multiple operators can share client_name (e.g. the
       // default "teranode" used by unconfigured nodes). peer_id is the
