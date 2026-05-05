@@ -18,7 +18,12 @@ const LIVE_PEERS = [
 
 const TOPIC_PREFIX = 'teranode/bitcoin/1.0.0/mainnet-';
 const TOPIC_KINDS: EventType[] = ['block', 'subtree', 'rejected_tx', 'node_status'];
-const TOPICS = TOPIC_KINDS.map((k) => TOPIC_PREFIX + k);
+// Observe-only topics: subscribed and logged for evaluation, not yet routed to Pub/Sub.
+// Enable by leaving in this list; remove or feature-flag once we know what they carry.
+const OBSERVE_KINDS = ['mining_on', 'bestblock'] as const;
+type ObserveKind = typeof OBSERVE_KINDS[number];
+const ALL_TOPIC_KINDS: (EventType | ObserveKind)[] = [...TOPIC_KINDS, ...OBSERVE_KINDS];
+const TOPICS = ALL_TOPIC_KINDS.map((k) => TOPIC_PREFIX + k);
 
 const PEER_LABELS: Record<string, string> = {
   '12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb': 'BSVB-US',
@@ -95,11 +100,24 @@ const shortHash = (h: string | undefined) => (h && h.length > 16 ? `${h.slice(0,
 pubsub.addEventListener('gossipsub:message', async (evt: any) => {
   const { topic, data } = evt.detail.msg;
   const kindStr = topic.replace(TOPIC_PREFIX, '');
-  if (!TOPIC_KINDS.includes(kindStr as EventType)) return;
-  const kind = kindStr as EventType;
+  if (!ALL_TOPIC_KINDS.includes(kindStr as any)) return;
 
   const wrapped = unwrap(data);
   if (!wrapped) return; // peer-discovery / unparseable noise
+
+  // Observe-only topics: log a structured line for offline evaluation, then return.
+  // Not counted in heartbeat totals, not published to Pub/Sub.
+  if ((OBSERVE_KINDS as readonly string[]).includes(kindStr)) {
+    console.log(`[observe:${kindStr}] ${JSON.stringify({
+      ts: new Date().toISOString(),
+      publisher: wrapped.publisher,
+      relay: labelOf(evt.detail.propagationSource.toString()),
+      data: wrapped.inner,
+    })}`);
+    return;
+  }
+
+  const kind = kindStr as EventType;
 
   const envelope: EventEnvelope = {
     type: kind,
