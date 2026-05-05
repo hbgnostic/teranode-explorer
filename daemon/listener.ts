@@ -172,7 +172,7 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
 });
 
 for (const topic of TOPICS) pubsub.subscribe(topic);
-console.log(`[boot] subscribed ${TOPIC_KINDS.join(',')}`);
+console.log(`[boot] subscribed ${ALL_TOPIC_KINDS.join(',')}`);
 
 for (const addr of LIVE_PEERS) {
   node.dial(multiaddr(addr)).catch((err) => console.log(`[boot] dial failed ${err.message}`));
