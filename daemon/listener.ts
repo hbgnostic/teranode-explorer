@@ -9,12 +9,26 @@ import { identify } from '@libp2p/identify';
 import { ping } from '@libp2p/ping';
 import { multiaddr } from '@multiformats/multiaddr';
 import { generateKeyPair } from '@libp2p/crypto/keys';
+import { peerIdFromString } from '@libp2p/peer-id';
 import { Publisher, EventType, EventEnvelope } from './publisher.js';
 
 const LIVE_PEERS = [
   '/dns4/teranode-eks-mainnet-us-1-p2p.bsvb.tech/tcp/9905/p2p/12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb',
   '/dns4/teranode-eks-mainnet-eu-1-p2p.bsvb.tech/tcp/9905/p2p/12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H',
 ];
+
+// Direct peers bypass gossipsub mesh-management and scoring penalties. The two
+// BSVB relays are trusted upstream infrastructure, not arbitrary peers. Marking
+// them as direct prevents the GraftBackoff penalty death spiral (where their
+// re-GRAFTs during our backoff window earned them -10 behaviour score and
+// caused us to PRUNE-then-penalize them in a loop). The library handles the
+// non-reciprocal case explicitly (we don't appear in their direct list).
+const DIRECT_PEERS = LIVE_PEERS.map((addr) => {
+  const ma = multiaddr(addr);
+  const peerIdStr = ma.getPeerId();
+  if (!peerIdStr) throw new Error(`LIVE_PEERS entry missing /p2p/<peerId>: ${addr}`);
+  return { id: peerIdFromString(peerIdStr), addrs: [ma] };
+});
 
 const TOPIC_PREFIX = 'teranode/bitcoin/1.0.0/mainnet-';
 const TOPIC_KINDS: EventType[] = ['block', 'subtree', 'rejected_tx', 'node_status'];
@@ -51,7 +65,12 @@ const node: Libp2p = await createLibp2p({
   services: {
     identify: identify(),
     ping: ping(),
-    pubsub: gossipsub({ allowPublishToZeroTopicPeers: true, emitSelf: false, fallbackToFloodsub: true }),
+    pubsub: gossipsub({
+      allowPublishToZeroTopicPeers: true,
+      emitSelf: false,
+      fallbackToFloodsub: true,
+      directPeers: DIRECT_PEERS,
+    }),
   },
 });
 
