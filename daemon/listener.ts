@@ -153,6 +153,21 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
   }
 });
 
+// Per-topic mesh membership events. PRUNE = remote (or local) removed us
+// from that topic's delivery set; GRAFT = added back. Frequent PRUNE without
+// corresponding GRAFT is the signature of being scored down or losing a
+// mesh slot. Useful for diagnosing silent gossip-flow death while TCP stays up.
+pubsub.addEventListener('gossipsub:graft', (evt: any) => {
+  const { peerId, topic } = evt.detail;
+  const kind = topic.replace(TOPIC_PREFIX, '');
+  console.log(`[mesh] GRAFT ${labelOf(peerId)} topic=${kind}`);
+});
+pubsub.addEventListener('gossipsub:prune', (evt: any) => {
+  const { peerId, topic } = evt.detail;
+  const kind = topic.replace(TOPIC_PREFIX, '');
+  console.log(`[mesh] PRUNE ${labelOf(peerId)} topic=${kind}`);
+});
+
 for (const topic of TOPICS) pubsub.subscribe(topic);
 console.log(`[boot] subscribed ${TOPIC_KINDS.join(',')}`);
 
@@ -167,10 +182,21 @@ setInterval(() => {
     rejected_tx: counts.rejected_tx - counts_at_last_heartbeat.rejected_tx,
     node_status: counts.node_status - counts_at_last_heartbeat.node_status,
   };
+  const meshStr = TOPIC_KINDS.map((k) => {
+    try { return `${k}=${pubsub.getMeshPeers(TOPIC_PREFIX + k).length}`; }
+    catch { return `${k}=?`; }
+  }).join(' ');
+  const scoreStr = Object.entries(PEER_LABELS).map(([peerId, label]) => {
+    try {
+      const s = pubsub.getScore(peerId);
+      return `${label}=${typeof s === 'number' ? s.toFixed(1) : '?'}`;
+    } catch { return `${label}=?`; }
+  }).join(' ');
   console.log(
     `[heartbeat] peers=${node.getPeers().length} ` +
     `total{block=${counts.block} subtree=${counts.subtree} rejected_tx=${counts.rejected_tx} node_status=${counts.node_status}} ` +
     `last_30s{block=${delta.block} subtree=${delta.subtree} rejected_tx=${delta.rejected_tx} node_status=${delta.node_status}} ` +
+    `mesh{${meshStr}} score{${scoreStr}} ` +
     `failures=${JSON.stringify(publisher.failures())}`
   );
   Object.assign(counts_at_last_heartbeat, counts);
