@@ -57,6 +57,119 @@ Built on the same libp2p / gossipsub primitives the operators themselves speak.
 
 Architecturally: announce on P2P, fetch on HTTP. The libp2p layer carries small notifications; the actual block/subtree data sits behind operator-served HTTP endpoints (`DataHubURL`).
 
+## Players and protocol vocabulary
+
+A reference for the terms this project uses, with each term mapped to the actors in the Teranode mainnet network it describes. "My listener" refers to the daemon in this repo.
+
+**Categories:** 🔵 libp2p / gossipsub protocol · 🟠 Teranode application layer · 🟣 this project's vocabulary
+
+<table>
+  <thead>
+    <tr>
+      <th align="left">Term</th>
+      <th align="left">What it means</th>
+      <th align="left">Who in this network</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>🔵 <b>Peer</b></td>
+      <td>Any node speaking the libp2p protocol that I'm connected to.</td>
+      <td>Everyone here. Operators, relay peers, and my listener are all peers.</td>
+    </tr>
+    <tr>
+      <td>🟠 <b>Operator</b></td>
+      <td>A peer running Teranode that broadcasts <code>node_status</code> heartbeats. Operators produce blocks and subtrees. Some operators ALSO play the relay role (see below).</td>
+      <td>The operators visible in my UI's right-side panel.</td>
+    </tr>
+    <tr>
+      <td>🟣 <b>Relay peer</b></td>
+      <td>A role some operators choose to play: they expose their libp2p endpoint publicly so listeners and observability tools can connect. Most operators do not — their endpoints are firewalled. Not a formal libp2p term; libp2p's <em>Circuit Relay v2</em> is a different protocol concept.</td>
+      <td>Two operators currently play the relay role: <code>bsva-mainnet-eu-1</code> (exposed publicly as the BSVB-EU endpoint) and <code>bsva-mainnet-eu-2</code> (exposed as BSVB-US, despite the "US" in the hostname). The other operators are operator-only. My UI marks these two with a "relay" badge.</td>
+    </tr>
+    <tr>
+      <td>🟠 <b>Producer</b></td>
+      <td>The peer that originated a subtree announcement — the operator running the subtree microservice. Appears as <code>ClientName</code> on subtree messages.</td>
+      <td>An operator, for subtree messages. The same field on block messages identifies the block announcer (see below).</td>
+    </tr>
+    <tr>
+      <td>🟠 <b>Block announcer</b></td>
+      <td>The operator that broadcast a block on the mesh. A single chain block typically generates several announcements from different operators within seconds — each one propagating the block they just processed. The on-the-wire <code>ClientName</code> field is always the literal string <code>"teranode"</code> on block messages and is not the announcer; the announcer is identified by <code>data.PeerID</code> (resolved by this project to the operator's <code>client_name</code> via their <code>node_status</code> broadcasts).</td>
+      <td>An operator that received and propagated a block. Not necessarily the actual proof-of-work miner — the PoW miner is identified by the block header's <code>miner_name</code>, which surfaces separately on operator cards as <code>last_miner</code>.</td>
+    </tr>
+    <tr>
+      <td>🟠 <b>Miner</b></td>
+      <td>In strict Bitcoin terms, the entity that performed proof-of-work and found the block (e.g. <code>/taal.com_TERANODE/</code>, <code>/Mining-Dutch/</code>). Comes from the block header. Distinct from the operator that announced the block on the mesh.</td>
+      <td>A small set of pools doing PoW on BSV mainnet at any given time. Reported by each operator on their <code>node_status</code> as <code>miner_name</code> (the miner of the latest block they have seen).</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Subscriber</b></td>
+      <td>A peer subscribed to a gossipsub topic, receiving messages on it.</td>
+      <td>My listener subscribes to all four topics. Operators and relay peers also subscribe.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Publisher</b></td>
+      <td>A peer that originates new messages on a topic. To publish, a peer has to be running the Teranode application logic that emits on that topic. Distinct from forwarding, which is what every gossipsub peer does to messages it receives.</td>
+      <td>Only operators publish in this network: blocks, subtrees, <code>node_status</code>, and <code>rejected_tx</code>. Relay peers forward published messages but do not originate them. My listener does not publish.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Mesh peer</b></td>
+      <td>A peer in my active push-delivery list for a topic. Mesh is the "fast lane" — messages get pushed to mesh peers without request. Target ~6 per topic.</td>
+      <td>My listener's mesh is intentionally empty; the relay peers are managed as Direct peers instead.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Direct peer</b></td>
+      <td>A peer flagged as trusted upstream infrastructure; receives and delivers messages outside mesh logic and bypasses scoring penalties.</td>
+      <td>BSVB-US and BSVB-EU, by my listener's config.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Bootstrap peer</b></td>
+      <td>A peer in my starter list, dialed at boot to make initial connections.</td>
+      <td>BSVB-US and BSVB-EU.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>GRAFT</b></td>
+      <td>Control message a peer sends to ask: "add me to your mesh for this topic."</td>
+      <td>Any peer can send GRAFT. My listener receives them from relay peers; due to direct-peer config, my listener replies with PRUNE rather than accepting.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>PRUNE</b></td>
+      <td>Control message a peer sends to say: "remove me from your mesh for this topic."</td>
+      <td>Any peer can send PRUNE, including my listener.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>IHAVE</b></td>
+      <td>Lazy gossip: "I've seen these message IDs recently." Broadcast periodically to non-mesh peers.</td>
+      <td>Any subscribed peer can send IHAVE. My listener receives them from relay peers.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>IWANT</b></td>
+      <td>Response to IHAVE: "send me message X." How a non-mesh peer pulls a message it heard about.</td>
+      <td>My listener sends IWANTs when it hears about a message it doesn't have.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Floodsub fallback</b></td>
+      <td>Backup delivery mode where messages flood to all subscribers when the mesh is empty.</td>
+      <td>Enabled in my listener's gossipsub config.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Score</b></td>
+      <td>A number each peer tracks per other peer, based on observed behavior. Below threshold → exclusion from mesh.</td>
+      <td>My listener scores the relay peers; the relay peers presumably score my listener, but I can't read their score of me.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Behaviour penalty</b></td>
+      <td>Counter that drives score down for protocol misbehaviors (e.g., re-GRAFT during backoff, broken IWANT promises). Score impact = counter² × weight.</td>
+      <td>Applied by my listener against any peer that triggers it. Direct peers bypass the GRAFT-side penalty.</td>
+    </tr>
+    <tr>
+      <td>🔵 <b>Broken promise</b></td>
+      <td>When a peer sent IHAVE for a message, I sent IWANT, and they failed to deliver in time.</td>
+      <td>Triggered when relay peers can't fulfill an IWANT my listener sent.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Glossary
 
 For terminology used in the explorer (FSM states, subtrees, operators, gossipsub topics, etc.), see the standalone [Teranode libp2p glossary](https://github.com/hbgnostic/teranode-listener-test/blob/master/GLOSSARY.md) — a reference document covering the gossip layer this explorer builds on.
