@@ -294,6 +294,18 @@ main {
 .operator[data-state="CATCHINGBLOCKS"] .state-badge { background: rgba(251, 191, 36, 0.15); color: var(--status-catching); }
 .operator[data-state="LEGACYSYNCING"] .state-badge { background: rgba(251, 146, 60, 0.15); color: var(--status-legacy); }
 .operator[data-state="IDLE"] .state-badge { background: rgba(148, 163, 184, 0.15); color: var(--status-idle); }
+.operator .relay-badge {
+  align-self: start;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(125, 211, 252, 0.15);
+  color: #7dd3fc;
+  margin-left: 4px;
+}
 .operator .meta {
   grid-column: 1 / -1;
   color: var(--text-dim);
@@ -385,6 +397,27 @@ footer a:hover { text-decoration: underline; }
   const FEED_MAX = 250;
   const STALE_MS = 60_000; // operator considered stale if no heartbeat in 60s
 
+  // Operators whose libp2p peer IDs ALSO serve as BSVB's public gossip-forwarding
+  // endpoints. Most operators are firewalled and only reachable through these two.
+  const RELAY_PEER_IDS = new Set([
+    '12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb', // BSVB-US endpoint (operator: bsva-mainnet-eu-2)
+    '12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H', // BSVB-EU endpoint (operator: bsva-mainnet-eu-1)
+  ]);
+
+  // Pull a readable hostname out of a URL string; returns null if not parseable.
+  const hostnameFromUrl = (url) => {
+    if (!url) return null;
+    try { return new URL(url).hostname || null; } catch { return null; }
+  };
+  // Friendlier display name when an operator broadcasts the generic "teranode"
+  // client_name. Three of the operators currently visible don't override the
+  // default; their base_url hostname is the next-best identifier.
+  const displayNameOf = (op) => {
+    if (op.client_name && op.client_name !== 'teranode') return op.client_name;
+    const host = hostnameFromUrl(op.base_url);
+    return host || op.client_name || 'unknown';
+  };
+
   const feedEl = document.getElementById('feed');
   const feedCountsEl = document.getElementById('feed-counts');
   const operatorListEl = document.getElementById('operator-list');
@@ -458,7 +491,7 @@ footer a:hover { text-decoration: underline; }
 
   // Synthesize derived feed entries from a node_status update.
   const detectDerivedEvents = (m, peerId, ts) => {
-    const name = m.client_name || '?';
+    const name = displayNameOf(m);
     // 60s window covers ~6 heartbeat cycles (~10s each), so every currently
     // online operator publishes at least once before we start emitting events.
     const inBootstrapWindow = (Date.now() - sessionStart) < 60000;
@@ -506,13 +539,15 @@ footer a:hover { text-decoration: underline; }
     operatorListEl.innerHTML = sorted.map((op) => {
       const stale = (Date.now() - op.lastSeen) > STALE_MS;
       const state = op.fsm_state || 'IDLE';
+      const isRelay = RELAY_PEER_IDS.has(op.peer_id);
       return `
         <div class="operator${stale ? ' stale' : ''}" data-state="${escapeHtml(state)}" data-peer="${escapeHtml(op.peer_id || '')}">
           <span class="name">
-            ${escapeHtml(op.client_name)}
+            ${escapeHtml(displayNameOf(op))}
             <span class="peer-suffix">${escapeHtml(shortPeerId(op.peer_id))}</span>
           </span>
           <span class="state-badge" title="${escapeHtml(STATE_DESCRIPTIONS[state] || '')}">${escapeHtml(state)}</span>
+          ${isRelay ? '<span class="relay-badge" title="This operator also serves as one of the two public BSVB relay endpoints that forward gossip to listeners.">relay</span>' : ''}
           <div class="meta">
             <span><span class="field-name">h=</span>${escapeHtml(op.best_height ?? '?')}</span>
             <span><span class="field-name">v=</span>${escapeHtml(op.version ?? '?')}</span>
@@ -530,15 +565,19 @@ footer a:hover { text-decoration: underline; }
   const handleEvent = (type, envelope) => {
     const m = envelope.data || {};
     const relay = envelope.relay;
+    // peer_label is set by the listener daemon's resolvePeerLabel(); falls back
+    // to the older in-message ClientName / outer publisher fields if this event
+    // came through before the listener was updated.
+    const who = envelope.peer_label || m.ClientName || envelope.publisher;
     if (type === 'block') {
       addEntry('block',
         `<span class="field">h=</span>${escapeHtml(m.Height)} ${escapeHtml(shortHash(m.Hash))} ` +
-        `<span class="field">announced by</span> ${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
+        `<span class="field">announced by</span> ${escapeHtml(who)} ` +
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'subtree') {
       addEntry('subtree',
-        `${escapeHtml(shortHash(m.Hash))} <span class="field">producer=</span>${escapeHtml(m.ClientName ?? envelope.publisher)} ` +
+        `${escapeHtml(shortHash(m.Hash))} <span class="field">producer=</span>${escapeHtml(who)} ` +
         `<span class="relay">via ${escapeHtml(relay)}</span>`,
         envelope.receivedAt);
     } else if (type === 'rejected_tx') {
