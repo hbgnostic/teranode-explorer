@@ -38,7 +38,63 @@ type SSEClient = { id: number; res: Response };
 const clients: SSEClient[] = [];
 let nextClientId = 1;
 
+// Operator state, built from incoming node_status events. Exposed at
+// GET /operators for downstream consumers (e.g. the BSV Intel Report's
+// daily n8n workflow) that want a snapshot of the current network
+// composition without subscribing to Pub/Sub themselves.
+type OperatorSnapshot = {
+  peer_id: string;
+  peer_label: string;
+  client_name: string;
+  base_url: string;
+  version: string;
+  fsm_state: string;
+  listen_mode: string;
+  storage: string;
+  best_height: number;
+  miner_name: string;
+  connected_peers_count: number;
+  is_relay: boolean;
+  last_seen: string;
+};
+const operators = new Map<string, OperatorSnapshot>();
+
+// Two operators whose libp2p peer IDs ALSO serve as BSVB's public
+// gossip-forwarding endpoints. See daemon/listener.ts PEER_LABELS.
+const RELAY_PEER_IDS = new Set([
+  '12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb', // BSVB-US (op: bsva-mainnet-eu-2)
+  '12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H', // BSVB-EU (op: bsva-mainnet-eu-1)
+]);
+
+const updateOperatorFromEnvelope = (envelopeJson: string): void => {
+  try {
+    const env = JSON.parse(envelopeJson);
+    const m = env?.data;
+    const peerId: string | undefined = m?.peer_id;
+    if (!peerId) return;
+    operators.set(peerId, {
+      peer_id: peerId,
+      peer_label: env?.peer_label || m?.client_name || peerId,
+      client_name: m?.client_name || '',
+      base_url: m?.base_url || '',
+      version: m?.version || '',
+      fsm_state: m?.fsm_state || '',
+      listen_mode: m?.listen_mode || '',
+      storage: m?.storage || '',
+      best_height: Number(m?.best_height) || 0,
+      miner_name: m?.miner_name || '',
+      connected_peers_count: Number(m?.connected_peers_count) || 0,
+      is_relay: RELAY_PEER_IDS.has(peerId),
+      last_seen: env?.receivedAt || new Date().toISOString(),
+    });
+  } catch {
+    // ignore malformed envelopes
+  }
+};
+
 const broadcast = (eventType: string, data: string) => {
+  if (eventType === 'node_status') updateOperatorFromEnvelope(data);
+
   const payload = `event: ${eventType}\ndata: ${data}\n\n`;
   // Iterate by index so removals during iteration are safe.
   for (let i = clients.length - 1; i >= 0; i--) {
@@ -69,6 +125,22 @@ app.use(express.static(resolve(__dirname, 'public')));
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true, clients: clients.length, topics: TOPICS });
+});
+
+// Snapshot of the current set of operators announcing on the mesh, built
+// from incoming node_status events. Stale entries are kept in the map
+// (an operator that stops broadcasting won't disappear automatically);
+// consumers can use `last_seen` to filter as they see fit.
+app.get('/operators', (_req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const sorted = [...operators.values()].sort((a, b) =>
+    a.client_name.localeCompare(b.client_name) || a.peer_id.localeCompare(b.peer_id),
+  );
+  res.json({
+    generated_at: new Date().toISOString(),
+    count: sorted.length,
+    operators: sorted,
+  });
 });
 
 app.get('/stream', (req: Request, res: Response) => {
