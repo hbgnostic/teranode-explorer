@@ -17,6 +17,10 @@ if (!PROJECT_ID) {
   process.exit(1);
 }
 
+// If set, /operators requires an X-API-Key header matching this value.
+// /stream remains open so the live UI keeps working. Unset → endpoint open.
+const OPERATORS_API_KEY = process.env.OPERATORS_API_KEY;
+
 // Topic names match what the listener daemon publishes to.
 const TOPICS = [
   'teranode-block',
@@ -131,7 +135,15 @@ app.get('/health', (_req: Request, res: Response) => {
 // from incoming node_status events. Stale entries are kept in the map
 // (an operator that stops broadcasting won't disappear automatically);
 // consumers can use `last_seen` to filter as they see fit.
-app.get('/operators', (_req: Request, res: Response) => {
+// Gated by OPERATORS_API_KEY env var when set.
+app.get('/operators', (req: Request, res: Response) => {
+  if (OPERATORS_API_KEY) {
+    const provided = req.headers['x-api-key'];
+    if (provided !== OPERATORS_API_KEY) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+  }
   res.setHeader('Access-Control-Allow-Origin', '*');
   const sorted = [...operators.values()].sort((a, b) =>
     a.client_name.localeCompare(b.client_name) || a.peer_id.localeCompare(b.peer_id),
