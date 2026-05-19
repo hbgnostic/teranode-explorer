@@ -34,11 +34,53 @@ const TOPIC_PREFIX = 'teranode/bitcoin/1.0.0/mainnet-';
 const TOPIC_KINDS: EventType[] = ['block', 'subtree', 'rejected_tx', 'node_status'];
 const TOPICS = TOPIC_KINDS.map((k) => TOPIC_PREFIX + k);
 
+// Public-facing labels for the two BSVB relay endpoints. These are DNS-hostname
+// labels, used in the [peer] connect/disconnect and [mesh] GRAFT/PRUNE log lines
+// where the meaningful identity is "which BSVB door is this." The operators
+// running BEHIND these peer IDs self-identify in their node_status broadcasts as
+// `bsva-mainnet-eu-1` (the BSVB-EU peer ID) and `bsva-mainnet-eu-2` (the BSVB-US
+// peer ID, despite the "US" hostname — BSVB's naming, not ours). Per-event
+// publisher resolution uses operatorMap below, not these labels.
 const PEER_LABELS: Record<string, string> = {
   '12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb': 'BSVB-US',
   '12D3KooW9z2JRV37TqsmU8sDQcSQDZGSgtPpvWUmVegYxYvXfW9H': 'BSVB-EU',
 };
 const labelOf = (peerId: string) => PEER_LABELS[peerId] ?? peerId.slice(-12);
+
+// Runtime map of libp2p peer_id → operator self-identity, built from incoming
+// node_status broadcasts. Used by resolvePeerLabel() to attach a friendly
+// `peer_label` to every outgoing Pub/Sub envelope. New operators appearing on
+// the mesh populate this automatically on their first heartbeat.
+type OperatorInfo = { client_name: string; base_url: string; last_seen: number };
+const operatorMap = new Map<string, OperatorInfo>();
+
+const hostnameFromUrl = (url: string | undefined): string | null => {
+  if (!url) return null;
+  try { return new URL(url).hostname || null; } catch { return null; }
+};
+
+// Resolve the best-effort friendly identifier for whoever originated a message.
+// Tried in order: (1) operator map lookup by peer_id, (2) in-message client_name,
+// (3) outer-envelope publisher, (4) hostname from a URL inside the message, (5)
+// short peer_id prefix. Three of eight operators currently broadcast the generic
+// `"teranode"` client_name; the URL fallback gives them readable identifiers.
+const resolvePeerLabel = (publisherName: string, data: any): string => {
+  // node_status uses snake_case peer_id; block + rejected_tx use PascalCase PeerID.
+  const peerId: string | undefined = data?.peer_id || data?.PeerID;
+  if (peerId) {
+    const op = operatorMap.get(peerId);
+    if (op?.client_name && op.client_name !== 'teranode') return op.client_name;
+    const opHost = hostnameFromUrl(op?.base_url);
+    if (opHost) return opHost;
+  }
+  const inMsgName: string | undefined = data?.client_name || data?.ClientName;
+  if (inMsgName && inMsgName !== 'teranode') return inMsgName;
+  if (publisherName && publisherName !== 'teranode') return publisherName;
+  const inMsgHost = hostnameFromUrl(data?.DataHubURL || data?.base_url);
+  if (inMsgHost) return inMsgHost;
+  if (peerId) return `peer:${peerId.slice(-12)}`;
+  return 'unknown';
+};
 
 const DRY_RUN = process.env.DRY_RUN === '1';
 const REJECTION_LOG = process.env.REJECTION_LOG === '1';
@@ -120,6 +162,18 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
   const wrapped = unwrap(data);
   if (!wrapped) return; // peer-discovery / unparseable noise
 
+  // Refresh the operator map first so resolvePeerLabel sees this broadcast.
+  if (kind === 'node_status') {
+    const peerId = wrapped.inner?.peer_id;
+    if (typeof peerId === 'string' && peerId.length > 0) {
+      operatorMap.set(peerId, {
+        client_name: wrapped.inner?.client_name || '',
+        base_url: wrapped.inner?.base_url || '',
+        last_seen: Date.now(),
+      });
+    }
+  }
+
   const envelope: EventEnvelope = {
     type: kind,
     topic,
@@ -127,6 +181,7 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
     relay: labelOf(evt.detail.propagationSource.toString()),
     receivedAt: new Date().toISOString(),
     data: wrapped.inner,
+    peer_label: resolvePeerLabel(wrapped.publisher, wrapped.inner),
   };
 
   counts[kind]++;
@@ -151,20 +206,20 @@ pubsub.addEventListener('gossipsub:message', async (evt: any) => {
   if (DRY_RUN) {
     const m: any = wrapped.inner;
     const relay = envelope.relay;
-    const pub = envelope.publisher;
+    const who = envelope.peer_label;
     switch (kind) {
       case 'block':
-        console.log(`🟦 BLOCK   h=${m.Height} hash=${shortHash(m.Hash)} miner=${m.ClientName ?? pub} relay=${relay}`);
+        console.log(`🟦 BLOCK   h=${m.Height} hash=${shortHash(m.Hash)} announced_by=${who} relay=${relay}`);
         break;
       case 'subtree':
-        console.log(`🌿 SUBTREE hash=${shortHash(m.Hash)} producer=${m.ClientName ?? pub} relay=${relay}`);
+        console.log(`🌿 SUBTREE hash=${shortHash(m.Hash)} producer=${who} relay=${relay}`);
         break;
       case 'rejected_tx':
-        console.log(`🚫 REJECTED tx=${shortHash(m.TxID)} reason="${(m.Reason ?? '?').slice(0, 80)}" by=${m.ClientName ?? pub} relay=${relay}`);
+        console.log(`🚫 REJECTED tx=${shortHash(m.TxID)} reason="${(m.Reason ?? '?').slice(0, 80)}" by=${who} relay=${relay}`);
         break;
       case 'node_status':
         console.log(
-          `📊 STATUS  ${m.client_name ?? pub} h=${m.best_height} state=${m.fsm_state} ` +
+          `📊 STATUS  ${who} h=${m.best_height} state=${m.fsm_state} ` +
           `listen=${m.listen_mode} peers=${m.connected_peers_count} v=${m.version} relay=${relay}`,
         );
         break;

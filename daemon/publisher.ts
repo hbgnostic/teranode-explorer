@@ -9,6 +9,10 @@ export type EventEnvelope = {
   relay: string;          // peer that forwarded the message to us
   receivedAt: string;     // ISO timestamp
   data: unknown;          // parsed inner message
+  peer_label?: string;    // best-effort friendly identifier for the originator,
+                          // resolved from a runtime peer_id → client_name map
+                          // built from node_status broadcasts; falls back to
+                          // hostname, publisher, or short peer-id prefix
 };
 
 const TOPIC_NAMES: Record<EventType, string> = {
