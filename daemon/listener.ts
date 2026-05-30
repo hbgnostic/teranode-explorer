@@ -11,6 +11,7 @@ import { multiaddr } from '@multiformats/multiaddr';
 import { generateKeyPair } from '@libp2p/crypto/keys';
 import { peerIdFromString } from '@libp2p/peer-id';
 import { Publisher, EventType, EventEnvelope } from './publisher.js';
+import { startBroadcaster } from './broadcaster.js';
 
 const LIVE_PEERS = [
   '/dns4/teranode-eks-mainnet-us-1-p2p.bsvb.tech/tcp/9905/p2p/12D3KooWH5JVqGdaw7JEizmysCfRRcPGTFfvRJF7Hkure7oQWYnb',
@@ -247,6 +248,18 @@ console.log(`[boot] subscribed ${TOPIC_KINDS.join(',')}`);
 
 for (const addr of LIVE_PEERS) {
   node.dial(multiaddr(addr)).catch((err) => console.log(`[boot] dial failed ${err.message}`));
+}
+
+// Optional HTTP broadcast harness. Off by default. When enabled, exposes
+// GET /datahubs (snapshot of operatorMap) and POST /broadcast (fan-out raw
+// tx bytes to every datahub with a recent node_status). Localhost-only by
+// default; use an SSH port-forward to drive it.
+if (process.env.BROADCAST_ENABLED === '1') {
+  startBroadcaster({
+    operatorMap,
+    port: parseInt(process.env.BROADCAST_PORT ?? '8080', 10),
+    bindHost: process.env.BROADCAST_BIND ?? '127.0.0.1',
+  });
 }
 
 setInterval(() => {

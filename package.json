@@ -11,7 +11,8 @@
   },
   "scripts": {
     "daemon": "tsx daemon/listener.ts",
-    "daemon:dryrun": "DRY_RUN=1 tsx daemon/listener.ts"
+    "daemon:dryrun": "DRY_RUN=1 tsx daemon/listener.ts",
+    "daemon:broadcast": "BROADCAST_ENABLED=1 tsx daemon/listener.ts"
   },
   "dependencies": {
     "@chainsafe/libp2p-gossipsub": "^14.1.2",
