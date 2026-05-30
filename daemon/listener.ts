@@ -257,7 +257,7 @@ for (const addr of LIVE_PEERS) {
 if (process.env.BROADCAST_ENABLED === '1') {
   startBroadcaster({
     operatorMap,
-    port: parseInt(process.env.BROADCAST_PORT ?? '8080', 10),
+    port: parseInt(process.env.BROADCAST_PORT ?? '8088', 10),
     bindHost: process.env.BROADCAST_BIND ?? '127.0.0.1',
   });
 }
